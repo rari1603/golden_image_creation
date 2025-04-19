@@ -33,7 +33,7 @@ build {
       "export OS_INSECURE=true",
 
       "echo 'Checking if image ${local.image_name} already exists...'",
-      "EXISTING_IMAGE=\"$(openstack image list --name ${local.image_name} -f value -c ID)\"",
+      "EXISTING_IMAGE=\"$(/usr/local/bin/openstack image list --name ${local.image_name} -f value -c ID)\"",
       "if [ -n \"$EXISTING_IMAGE\" ]; then",
       "  echo \"Image found: $EXISTING_IMAGE. Attempting to delete it...\"",
       "  openstack image delete \"$EXISTING_IMAGE\" || echo 'Warning: Failed to delete image. Continuing...'",
