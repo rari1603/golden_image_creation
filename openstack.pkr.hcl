@@ -31,6 +31,8 @@ build {
       "export OS_COMPUTE_API_VERSION=2.1",
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
+      "export PYTHONPATH=/usr/local/lib/python3.9/site-packages:$PYTHONPATH",
+      "export PATH=/usr/local/bin:$PATH",
 
       "echo 'Checking if image ${local.image_name} already exists...'",
       "EXISTING_IMAGE=\"$(/usr/local/bin/openstack image list --name ${local.image_name} -f value -c ID)\"",
