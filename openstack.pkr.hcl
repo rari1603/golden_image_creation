@@ -59,7 +59,7 @@ source "openstack" "rhel_image" {
   ssh_username       = "decoy"
   ssh_password       = "Mycl0ud@456"
   security_groups    = ["default"]
-  networks           = ["5cb042a1-6199-4795-ac43-05f5c6c25e16"]
+  networks           = ["cabbc816-7263-4b07-a537-8c2aca7eb988"]
 }
 
 build {
