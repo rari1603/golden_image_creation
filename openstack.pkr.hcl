@@ -7,8 +7,8 @@ variable "openstack_domain_name" {
 }
 
 locals {
-  # Generate timestamp as YYYYMMDD
-  timestamp   = regex_replace(timestamp(), "[^0-9]", "")[0:8]
+  # Generate full timestamp as YYYYMMDDHHMMSS
+  timestamp   = substr(regex_replace(timestamp(), "[^0-9]", ""), 0, 14)
   image_name  = "patched-rhel9.2-${local.timestamp}"
 }
 
