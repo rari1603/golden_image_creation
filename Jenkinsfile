@@ -20,15 +20,24 @@ pipeline {
             }
         }
 
-        stage('Run Packer Build') {
+        stage('Step 1: Cleanup Existing Image') {
             steps {
                 sh '''
-                    echo "Running packer build..."
-                    packer build -var-file=openstack.pkrvars.hcl openstack.pkr.hcl
+                    echo "Running cleanup stage..."
+                    packer build -only=cleanup-existing-image.null.cleanup -var-file=${VAR_FILE} ${HCL_FILE}
                 '''
             }
         }
 
+        stage('Step 2: Build New Image') {
+            steps {
+                sh '''
+                    echo "Running image build stage..."
+                    packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${VAR_FILE} ${HCL_FILE}
+                '''
+            }
+        }
+    }
         stage('Verify Image Exists') {
             steps {
                 script {
