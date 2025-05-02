@@ -1,6 +1,6 @@
 pipeline {
     agent any
- 
+
     environment {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
@@ -9,7 +9,7 @@ pipeline {
         LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2"  // Full path with timestamp
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
- 
+
     stages {
         stage('Clone Repo') {
             steps {
@@ -17,7 +17,7 @@ pipeline {
                 git branch: 'main', credentialsId: '03', url: 'https://github.com/rari1603/golden_image_creation.git'
             }
         }
- 
+
         stage('Install Dependencies') {
             steps {
                 script {
@@ -35,7 +35,7 @@ pipeline {
                 }
             }
         }
- 
+
         stage('Build Image with Packer - Cleanup') {
             steps {
                 script {
@@ -47,7 +47,7 @@ pipeline {
                 }
             }
         }
- 
+
         stage('Build Image with Packer - RHEL Image') {
             steps {
                 script {
@@ -75,14 +75,7 @@ pipeline {
                 script {
                     echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
                     // Archive the saved image as an artifact for future use or download
-                    sh """
-                        if [ -f "${LOCAL_IMAGE_PATH}" ]; then
-                            echo "Image found, archiving..."
-                            archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
-                        else
-                            echo "Image not found at ${LOCAL_IMAGE_PATH}, skipping archive."
-                        fi
-                    """
+                    archiveArtifacts artifacts: "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2", fingerprint: true
                 }
             }
         }
@@ -127,7 +120,7 @@ pipeline {
             }
         }
     }
- 
+
     post {
         always {
             echo "Build process completed."
