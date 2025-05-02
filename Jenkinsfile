@@ -1,120 +1,94 @@
-pipeline {
-    agent any
+variable "openstack_username" {}
+variable "openstack_password" {}
+variable "openstack_tenant_name" {}
+variable "openstack_auth_url" {}
+variable "openstack_domain_name" {
+  default = "Default"
+}
 
-    environment {
-        PACKER_VARS = 'openstack.pkrvars.hcl'
-        PACKER_FILE = 'openstack.pkr.hcl'
-        IMAGE_NAME  = 'patched-rhel9.2'
-        IMAGE_TIMESTAMP = '20060102150405'
-        LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2"
-        VENV_DIR = "/var/lib/jenkins/venv"
-    }
+# Dynamically generate image name using a timestamp
+locals {
+  timestamp  = formatdate("20060102150405", timestamp())  # Go time format: YYYYMMDDHHMMSS
+  image_name = "patched-rhel9.2-${local.timestamp}"
+}
 
-    stages {
-        stage('Clone Repo') {
-            steps {
-                git branch: 'main', credentialsId: '03', url: 'https://github.com/rari1603/golden_image_creation.git'
-            }
-        }
 
-        stage('Install Dependencies') {
-            steps {
-                script {
-                    sh """
-                        python3.9 -m venv ${VENV_DIR}
-                        source ${VENV_DIR}/bin/activate
-                        pip install --upgrade pip
-                        pip install python-openstackclient
-                    """
-                }
-            }
-        }
+# --- CLEANUP BUILD (Deletes existing image) ---
+source "null" "cleanup" {
+  communicator = "none"
+}
 
-        stage('Build Image with Packer - Cleanup') {
-            steps {
-                script {
-                    sh """
-                        source ${VENV_DIR}/bin/activate
-                        packer build -only=cleanup-existing-image.null.cleanup -var-file=${PACKER_VARS} ${PACKER_FILE}
-                    """
-                }
-            }
-        }
+build {
+  name    = "cleanup-existing-image"
+  sources = ["source.null.cleanup"]
 
-        stage('Build Image with Packer - RHEL Image') {
-            steps {
-                script {
-                    sh """
-                        source ${VENV_DIR}/bin/activate
-                        packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${PACKER_VARS} ${PACKER_FILE}
-                    """
-                }
-            }
-        }
+  provisioner "shell-local" {
+    inline = [
+      "echo \"Setting up OpenStack environment...\"",
+      "export OS_AUTH_URL=\"${var.openstack_auth_url}\"",
+      "export OS_USERNAME=\"${var.openstack_username}\"",
+      "export OS_PASSWORD=\"${var.openstack_password}\"",
+      "export OS_PROJECT_NAME=\"${var.openstack_tenant_name}\"",
+      "export OS_USER_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
+      "export OS_PROJECT_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
+      "export OS_COMPUTE_API_VERSION=2.1",
+      "export OS_IMAGE_API_VERSION=2",
+      "export OS_INSECURE=true",
+      "echo \"Checking if image ${local.image_name} already exists...\"",
+      "EXISTING_IMAGE=\"$(openstack image list --name ${local.image_name} -f value -c ID)\"",
+      "if [ -n \"$EXISTING_IMAGE\" ]; then",
+      "  echo \"Image found: $EXISTING_IMAGE. Attempting to delete it...\"",
+      "  openstack image delete \"$EXISTING_IMAGE\" || echo 'Warning: Failed to delete image. Continuing...'",
+      "else",
+      "  echo 'No existing image found.'",
+      "fi"
+    ]
+  }
+}
 
-        stage('Check Image Directory') {
-            steps {
-                script {
-                    // Check the workspace and confirm the path
-                    echo 'Checking if the image exists...'
-                    sh 'pwd' // Print the current working directory
-                    sh 'ls -l /var/lib/jenkins/workspace/goldenimage/' || echo "Directory not found"
-                }
-            }
-        }
+# --- MAIN IMAGE BUILD ---
+source "openstack" "rhel_image" {
+  username           = var.openstack_username
+  password           = var.openstack_password
+  domain_name        = var.openstack_domain_name
+  identity_endpoint  = var.openstack_auth_url
+  tenant_name        = var.openstack_tenant_name
+  insecure           = true
 
-        stage('Archive Image') {
-            steps {
-                script {
-                    echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
-                    // Archive the image from the expected path
-                    archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
-                }
-            }
-        }
+  source_image_name  = "rhel9.4_7feb25"
+  image_name         = local.image_name
+  flavor             = "c8m16d100"
+  ssh_username       = "decoy"
+  ssh_password       = "Mycl0ud@456"
+  security_groups    = ["default"]
+  networks           = ["cabbc816-7263-4b07-a537-8c2aca7eb988"]
+}
 
-        stage('Upload Image to Another OpenStack Environment') {
-            steps {
-                script {
-                    def imageFile = "${LOCAL_IMAGE_PATH}"
-                    def imageName = "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"
+build {
+  name    = "rhel9.2-b2b-image"
+  sources = ["source.openstack.rhel_image"]
 
-                    sh """
-                        echo "Uploading image '${imageName}' to the destination OpenStack..."
-                        source ${VENV_DIR}/bin/activate
-                        
-                        if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
-                            echo "ERROR: Missing openstack.env file with destination cloud credentials!"
-                            exit 1
-                        fi
+  provisioner "shell" {
+    inline = [
+      "sudo mkdir /home/ritu-test",
+      "echo \"Packer image build complete!\" > /home/decoy/info.txt"
+    ]
+  }
 
-                        set -a
-                        source /var/lib/jenkins/workspace/goldenimage/openstack.env
-                        set +a
-
-                        openstack token issue || { echo "Authentication failed"; exit 1; }
-
-                        openstack image create \\
-                            --disk-format qcow2 \\
-                            --container-format bare \\
-                            --public \\
-                            --file "${imageFile}" \\
-                            "${imageName}"
-
-                        echo "Upload complete."
-                    """
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            echo "Build process completed."
-            cleanWs()
-        }
-        failure {
-            echo "Build failed!"
-        }
-    }
+  post-processor "shell-local" {
+    inline = [
+      "echo \"Setting up OpenStack environment...\"",
+      "export OS_AUTH_URL=\"${var.openstack_auth_url}\"",
+      "export OS_USERNAME=\"${var.openstack_username}\"",
+      "export OS_PASSWORD=\"${var.openstack_password}\"",
+      "export OS_PROJECT_NAME=\"${var.openstack_tenant_name}\"",
+      "export OS_USER_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
+      "export OS_PROJECT_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
+      "export OS_COMPUTE_API_VERSION=2.1",
+      "export OS_IMAGE_API_VERSION=2",
+      "export OS_INSECURE=true",
+      "echo \"Saving image locally as ${local.image_name}.qcow2...\"",
+      "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
+    ]
+  }
 }
