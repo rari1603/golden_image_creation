@@ -6,13 +6,31 @@ variable "openstack_domain_name" {
   default = "Default"
 }
 
-# Dynamically generate image name using a timestamp
 locals {
-  build_date = regex_replace(timestamp(), "^(\\d{4})-(\\d{2})-(\\d{2}).*$", "$1$2$3")
-  image_name = "patched-rhel9.2-${local.build_date}"
+  # Generate timestamp as YYYYMMDD
+  timestamp   = regex_replace(timestamp(), "[^0-9]", "")[0:8]
+  image_name  = "patched-rhel9.2-${local.timestamp}"
 }
 
-# --- CLEANUP BUILD (Deletes existing image) ---
+# --- STEP 1: CLEAR WORKSPACE ---
+source "null" "clear_workspace" {
+  communicator = "none"
+}
+
+build {
+  name    = "clear-workspace"
+  sources = ["source.null.clear_workspace"]
+
+  provisioner "shell-local" {
+    inline = [
+      "echo 'Clearing workspace...'",
+      "rm -rf *.qcow2 *.log *.tmp *~ .packer.d || true",
+      "echo 'Workspace cleanup complete.'"
+    ]
+  }
+}
+
+# --- STEP 2: CLEANUP EXISTING IMAGE ---
 source "null" "cleanup" {
   communicator = "none"
 }
@@ -46,7 +64,7 @@ build {
   }
 }
 
-# --- MAIN IMAGE BUILD ---
+# --- STEP 3: MAIN IMAGE BUILD ---
 source "openstack" "rhel_image" {
   username           = var.openstack_username
   password           = var.openstack_password
@@ -88,7 +106,7 @@ build {
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
 
-      "echo 'Saving image locally as ${local.image_name}.qcow2...'",
+      "echo 'Saving image locally...'",
       "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
     ]
   }
