@@ -6,10 +6,10 @@ variable "openstack_domain_name" {
   default = "Default"
 }
 
-# Dynamically generate image name using a timestamp
-locals {
-  timestamp  = timestamp()
-  image_name = "patched-rhel9.2-${replace(local.timestamp, "[-:T]", "")}"
+variable "image_name" {
+  description = "The name of the image to be created"
+  type        = string
+  default     = "patched-rhel9.2-${replace(timestamp(), \"[-:T]\", \"\")}"
 }
 
 # --- CLEANUP BUILD (Deletes existing image) ---
@@ -34,8 +34,8 @@ build {
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
 
-      "echo 'Checking if image ${local.image_name} already exists...'",
-      "EXISTING_IMAGE=\"$(openstack image list --name ${local.image_name} -f value -c ID)\"",
+      "echo 'Checking if image ${var.image_name} already exists...'",
+      "EXISTING_IMAGE=\"$(openstack image list --name ${var.image_name} -f value -c ID)\"",
       "if [ -n \"$EXISTING_IMAGE\" ]; then",
       "  echo \"Image found: $EXISTING_IMAGE. Attempting to delete it...\"",
       "  openstack image delete \"$EXISTING_IMAGE\" || echo 'Warning: Failed to delete image. Continuing...'",
@@ -56,7 +56,7 @@ source "openstack" "rhel_image" {
   insecure           = true
 
   source_image_name  = "rhel9.4_7feb25"
-  image_name         = local.image_name
+  image_name         = var.image_name
   flavor             = "c8m16d100"
   ssh_username       = "decoy"
   ssh_password       = "Mycl0ud@456"
@@ -88,8 +88,8 @@ build {
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
 
-      "echo 'Saving image locally as ${local.image_name}.qcow2...'",
-      "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
+      "echo 'Saving image locally as ${var.image_name}.qcow2...'",
+      "openstack image save ${var.image_name} --file ${var.image_name}.qcow2 || echo 'Warning: Image save failed.'"
     ]
   }
 }
