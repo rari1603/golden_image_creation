@@ -3,7 +3,7 @@ pipeline {
     environment {
         TIMESTAMP = sh(script: "date +%Y%m%d", returnStdout: true).trim()
         IMAGE_NAME = "patched-rhel9.2-${env.TIMESTAMP}.qcow2"
-        GITHUB_REPO = 'https://github.com/yourusername/your-repo' // Replace with your GitHub repo URL
+        GITHUB_REPO = 'https://github.com/rari1603/golden_image_creation.git' // Replace with your GitHub repo URL
         GITHUB_BRANCH = 'main'  // Replace with your desired branch
     }
 
