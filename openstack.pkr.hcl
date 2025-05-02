@@ -1,113 +1,60 @@
-variable "openstack_username" {}
-variable "openstack_password" {}
-variable "openstack_tenant_name" {}
-variable "openstack_auth_url" {}
-variable "openstack_domain_name" {
-  default = "Default"
-}
+pipeline {
+    agent any
+    environment {
+        TIMESTAMP = sh(script: "date +%Y%m%d", returnStdout: true).trim()
+        IMAGE_NAME = "patched-rhel9.2-${env.TIMESTAMP}.qcow2"
+    }
 
-locals {
-  # Generate full timestamp as YYYYMMDDHHMMSS
-  timestamp   = substr(regex_replace(timestamp(), "[^0-9]", ""), 0, 14)
-  image_name  = "patched-rhel9.2-${local.timestamp}"
-}
+    stages {
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
 
-# --- STEP 1: CLEAR WORKSPACE ---
-source "null" "clear_workspace" {
-  communicator = "none"
-}
+        stage('Run Packer Build') {
+            steps {
+                sh '''
+                    echo "Running packer build..."
+                    packer build -var-file=openstack.pkrvars.hcl openstack.pkr.hcl
+                '''
+            }
+        }
 
-build {
-  name    = "clear-workspace"
-  sources = ["source.null.clear_workspace"]
+        stage('Verify Image Exists') {
+            steps {
+                script {
+                    def fileExists = fileExists("${env.IMAGE_NAME}")
+                    if (!fileExists) {
+                        error "Image file ${env.IMAGE_NAME} not found! Skipping upload."
+                    } else {
+                        sh "ls -lh ${env.IMAGE_NAME}"
+                    }
+                }
+            }
+        }
 
-  provisioner "shell-local" {
-    inline = [
-      "echo 'Clearing workspace...'",
-      "rm -rf *.qcow2 *.log *.tmp *~ .packer.d || true",
-      "echo 'Workspace cleanup complete.'"
-    ]
-  }
-}
+        stage('Upload to OpenStack') {
+            when {
+                expression {
+                    fileExists("${env.IMAGE_NAME}")
+                }
+            }
+            steps {
+                sh """
+                    echo 'Uploading image to OpenStack...'
+                    openstack image create --disk-format qcow2 --container-format bare --file ${env.IMAGE_NAME} ${env.IMAGE_NAME}
+                """
+            }
+        }
+    }
 
-# --- STEP 2: CLEANUP EXISTING IMAGE ---
-source "null" "cleanup" {
-  communicator = "none"
-}
-
-build {
-  name    = "cleanup-existing-image"
-  sources = ["source.null.cleanup"]
-
-  provisioner "shell-local" {
-    inline = [
-      "echo 'Setting up OpenStack environment...'",
-      "export OS_AUTH_URL='${var.openstack_auth_url}'",
-      "export OS_USERNAME='${var.openstack_username}'",
-      "export OS_PASSWORD='${var.openstack_password}'",
-      "export OS_PROJECT_NAME='${var.openstack_tenant_name}'",
-      "export OS_USER_DOMAIN_NAME='${var.openstack_domain_name}'",
-      "export OS_PROJECT_DOMAIN_NAME='${var.openstack_domain_name}'",
-      "export OS_COMPUTE_API_VERSION=2.1",
-      "export OS_IMAGE_API_VERSION=2",
-      "export OS_INSECURE=true",
-
-      "echo 'Checking if image ${local.image_name} already exists...'",
-      "EXISTING_IMAGE=\"$(openstack image list --name ${local.image_name} -f value -c ID)\"",
-      "if [ -n \"$EXISTING_IMAGE\" ]; then",
-      "  echo \"Image found: $EXISTING_IMAGE. Attempting to delete it...\"",
-      "  openstack image delete \"$EXISTING_IMAGE\" || echo 'Warning: Failed to delete image. Continuing...'",
-      "else",
-      "  echo 'No existing image found.'",
-      "fi"
-    ]
-  }
-}
-
-# --- STEP 3: MAIN IMAGE BUILD ---
-source "openstack" "rhel_image" {
-  username           = var.openstack_username
-  password           = var.openstack_password
-  domain_name        = var.openstack_domain_name
-  identity_endpoint  = var.openstack_auth_url
-  tenant_name        = var.openstack_tenant_name
-  insecure           = true
-
-  source_image_name  = "rhel9.4_7feb25"
-  image_name         = local.image_name
-  flavor             = "c8m16d100"
-  ssh_username       = "decoy"
-  ssh_password       = "Mycl0ud@456"
-  security_groups    = ["default"]
-  networks           = ["cabbc816-7263-4b07-a537-8c2aca7eb988"]
-}
-
-build {
-  name    = "rhel9.2-b2b-image"
-  sources = ["source.openstack.rhel_image"]
-
-  provisioner "shell" {
-    inline = [
-      "sudo mkdir /home/ritu-test",
-      "echo 'Packer image build complete!' > /home/decoy/info.txt"
-    ]
-  }
-
-  post-processor "shell-local" {
-    inline = [
-      "echo 'Setting up OpenStack environment...'",
-      "export OS_AUTH_URL='${var.openstack_auth_url}'",
-      "export OS_USERNAME='${var.openstack_username}'",
-      "export OS_PASSWORD='${var.openstack_password}'",
-      "export OS_PROJECT_NAME='${var.openstack_tenant_name}'",
-      "export OS_USER_DOMAIN_NAME='${var.openstack_domain_name}'",
-      "export OS_PROJECT_DOMAIN_NAME='${var.openstack_domain_name}'",
-      "export OS_COMPUTE_API_VERSION=2.1",
-      "export OS_IMAGE_API_VERSION=2",
-      "export OS_INSECURE=true",
-
-      "echo 'Saving image locally...'",
-      "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
-    ]
-  }
+    post {
+        always {
+            echo 'Build process completed.'
+        }
+        failure {
+            echo 'Build failed!'
+        }
+    }
 }
