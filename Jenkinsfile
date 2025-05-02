@@ -1,17 +1,68 @@
-Cloning the remote Git repository
-Cloning repository https://github.com/yourusername/your-repo
- > git init /var/lib/jenkins/workspace/goldenimage@2 # timeout=10
-Fetching upstream changes from https://github.com/yourusername/your-repo
- > git --version # timeout=10
- > git --version # 'git version 2.43.5'
-Setting http proxy: 100.65.247.140:3128
- > git fetch --tags --force --progress -- https://github.com/yourusername/your-repo +refs/heads/*:refs/remotes/origin/* # timeout=10
-ERROR: Error cloning remote repo 'origin'
-hudson.plugins.git.GitException: Command "git fetch --tags --force --progress -- https://github.com/yourusername/your-repo +refs/heads/*:refs/remotes/origin/*" returned status code 128:
-stdout: 
-stderr: remote: Support for password authentication was removed on August 13, 2021.
-remote: Please see https://docs.github.com/get-started/getting-started-with-git/about-remote-repositories#cloning-with-https-urls for information on currently recommended modes of authentication.
-fatal: Authentication failed for 'https://github.com/yourusername/your-repo/'
+pipeline {
+    agent any
+    environment {
+        TIMESTAMP = sh(script: "date +%Y%m%d", returnStdout: true).trim()
+        IMAGE_NAME = "patched-rhel9.2-${env.TIMESTAMP}.qcow2"
+        GITHUB_REPO = 'https://github.com/yourusername/your-repo' // Replace with your GitHub repo URL
+        GITHUB_BRANCH = 'main'  // Replace with your desired branch
+    }
 
-	at PluginClassLoader for git-client//org.jenkinsci.plugins.gitclient.CliGitAPIImpl.launchCommandIn(CliGitAPIImpl.java:2852)
-	at PluginClassLoader for git-
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git url: "${env.GITHUB_REPO}", branch: "${env.GITHUB_BRANCH}"
+            }
+        }
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Run Packer Build') {
+            steps {
+                sh '''
+                    echo "Running packer build..."
+                    packer build -var-file=openstack.pkrvars.hcl openstack.pkr.hcl
+                '''
+            }
+        }
+
+        stage('Verify Image Exists') {
+            steps {
+                script {
+                    def fileExists = fileExists("${env.IMAGE_NAME}")
+                    if (!fileExists) {
+                        error "Image file ${env.IMAGE_NAME} not found! Skipping upload."
+                    } else {
+                        sh "ls -lh ${env.IMAGE_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Upload to OpenStack') {
+            when {
+                expression {
+                    fileExists("${env.IMAGE_NAME}")
+                }
+            }
+            steps {
+                sh """
+                    echo 'Uploading image to OpenStack...'
+                    openstack image create --disk-format qcow2 --container-format bare --file ${env.IMAGE_NAME} ${env.IMAGE_NAME}
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Build process completed.'
+        }
+        failure {
+            echo 'Build failed!'
+        }
+    }
+}
