@@ -5,7 +5,7 @@ pipeline {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
         IMAGE_NAME  = 'patched-rhel9.2'
-        LOCAL_IMAGE_PATH = "build/${IMAGE_NAME}.qcow2"  // Corrected the file path (use the actual path where the image is saved)
+        LOCAL_IMAGE_PATH = "build/${IMAGE_NAME}.qcow2"  // Ensure this path matches your Packer output path
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
  
@@ -59,12 +59,29 @@ pipeline {
             }
         }
 
+        stage('Check Image Directory') {
+            steps {
+                script {
+                    // Check if the directory and file exist
+                    sh 'echo "Checking if the image exists..."'
+                    sh 'ls -l build/' // List contents of the build folder
+                }
+            }
+        }
+
         stage('Archive Image') {
             steps {
                 script {
                     echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
                     // Archive the saved image as an artifact for future use or download
-                    archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                    sh """
+                        if [ -f "${LOCAL_IMAGE_PATH}" ]; then
+                            echo "Image found, archiving..."
+                            archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                        else
+                            echo "Image not found at ${LOCAL_IMAGE_PATH}, skipping archive."
+                        fi
+                    """
                 }
             }
         }
