@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                git url: "${env.GITHUB_REPO}", branch: "${env.GITHUB_BRANCH}"
+                git credentialsId: '04', url: "${env.GITHUB_REPO}", branch: "${env.GITHUB_BRANCH}"
             }
         }
 
