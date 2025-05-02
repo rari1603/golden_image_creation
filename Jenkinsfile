@@ -2,23 +2,15 @@ pipeline {
     agent any
 
     environment {
-        PACKER_VARS = 'openstack.pkrvars.hcl'
-        PACKER_FILE = 'openstack.pkr.hcl'
-        IMAGE_NAME  = 'patched-rhel9.2'
-        LOCAL_IMAGE_PATH = "/home/${IMAGE_NAME}.qcow2"  // Corrected the file path
-        VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
+        TIMESTAMP = sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim()  // Updated to avoid special characters
+        IMAGE_NAME = "patched-rhel9.2-${env.TIMESTAMP}.qcow2"
+        GITHUB_REPO = 'https://github.com/rari1603/golden_image_creation.git' 
+        GITHUB_BRANCH = 'main'  
     }
 
     stages {
-        stage('Clean Workspace') {
-            steps {
-                cleanWs()
-            }
-        }
-
         stage('Clone Repo') {
             steps {
-                // Clone the Git repository containing the Packer files
                 git branch: 'main', credentialsId: '03', url: 'https://github.com/rari1603/golden_image_creation.git'
             }
         }
@@ -26,13 +18,8 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Create a virtual environment
                     sh """
                         python3.9 -m venv ${VENV_DIR}
-                    """
-
-                    // Activate the virtual environment, upgrade pip, and install python-openstackclient
-                    sh """
                         source ${VENV_DIR}/bin/activate
                         pip install --upgrade pip
                         pip install python-openstackclient
@@ -68,9 +55,9 @@ pipeline {
         stage('Save Image Locally') {
             steps {
                 script {
-                    // Save the image locally, assuming the image is stored in the current directory
+                    // Save the image locally
                     sh """
-                        cp ${IMAGE_NAME}.qcow2 ${LOCAL_IMAGE_PATH}
+                        cp ${IMAGE_NAME} ${LOCAL_IMAGE_PATH}
                     """
                 }
             }
