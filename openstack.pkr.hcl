@@ -8,10 +8,10 @@ variable "openstack_domain_name" {
 
 # Dynamically generate image name using a timestamp
 locals {
-  timestamp  = formatdate("20060102150405", timestamp())  # Go time format: YYYYMMDDHHMMSS
-  image_name = "patched-rhel9.2-${local.timestamp}"
+  timestamp     = formatdate("20060102150405", timestamp())  # Go time format: YYYYMMDDHHMMSS
+  image_name    = "patched-rhel9.2-${local.timestamp}"
+  image_path    = "/var/lib/jenkins/images/patched-rhel9.2.qcow2"
 }
-
 
 # --- CLEANUP BUILD (Deletes existing image) ---
 source "null" "cleanup" {
@@ -87,8 +87,9 @@ build {
       "export OS_COMPUTE_API_VERSION=2.1",
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
-      "echo \"Saving image locally as ${local.image_name}.qcow2...\"",
-      "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
+      "mkdir -p /var/lib/jenkins/images",
+      "echo \"Saving image locally as ${local.image_path}...\"",
+      "openstack image save ${local.image_name} --file ${local.image_path} || echo 'Warning: Image save failed.'"
     ]
   }
 }
