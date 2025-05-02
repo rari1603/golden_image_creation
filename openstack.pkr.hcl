@@ -6,8 +6,10 @@ variable "openstack_domain_name" {
   default = "Default"
 }
 
+# Dynamically generate image name using a timestamp
 locals {
-  image_name = "patched-rhel9.2"
+  build_date = regex_replace(timestamp(), "^(\\d{4})-(\\d{2})-(\\d{2}).*$", "$1$2$3")
+  image_name = "patched-rhel9.2-${local.build_date}"
 }
 
 # --- CLEANUP BUILD (Deletes existing image) ---
@@ -86,9 +88,8 @@ build {
       "export OS_IMAGE_API_VERSION=2",
       "export OS_INSECURE=true",
 
-      "echo 'Saving image locally...'",
+      "echo 'Saving image locally as ${local.image_name}.qcow2...'",
       "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
     ]
   }
 }
-
