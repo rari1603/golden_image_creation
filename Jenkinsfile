@@ -5,7 +5,7 @@ pipeline {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
         IMAGE_NAME  = 'patched-rhel9.2'
-        LOCAL_IMAGE_PATH = "build/${IMAGE_NAME}.qcow2"  // Ensure this path matches your Packer output path
+        LOCAL_IMAGE_PATH = "workspace/goldenimage/${IMAGE_NAME}.qcow2"  // Correct the path relative to Jenkins workspace
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
  
@@ -62,9 +62,9 @@ pipeline {
         stage('Check Image Directory') {
             steps {
                 script {
-                    // Check if the directory and file exist
+                    // Check if the image exists in Jenkins workspace
                     sh 'echo "Checking if the image exists..."'
-                    sh 'ls -l build/' // List contents of the build folder
+                    sh 'ls -l /var/lib/jenkins/workspace/goldenimage/' // List contents of the workspace
                 }
             }
         }
