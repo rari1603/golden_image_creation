@@ -4,8 +4,9 @@ pipeline {
     environment {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
-        IMAGE_NAME  = 'patched-rhel9.2'
-        LOCAL_IMAGE_PATH = "workspace/goldenimage/${IMAGE_NAME}.qcow2"  // Correct the path relative to Jenkins workspace
+        IMAGE_NAME  = 'patched-rhel9.2'  // Base name
+        IMAGE_TIMESTAMP = '20060102150405'  // Timestamp part of the image name
+        LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2"  // Full path with timestamp
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
  
@@ -90,7 +91,7 @@ pipeline {
             steps {
                 script {
                     def imageFile = "${LOCAL_IMAGE_PATH}"  // The qcow2 file created by Packer
-                    def imageName = "${IMAGE_NAME}"  // Image name (e.g., "patched-rhel9.2-<timestamp>")
+                    def imageName = "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"  // Image name (e.g., "patched-rhel9.2-<timestamp>")
 
                     sh """
                         echo "Uploading image '${imageName}' to the destination OpenStack..."
@@ -99,13 +100,13 @@ pipeline {
                         source ${VENV_DIR}/bin/activate
 
                         # Load destination OpenStack environment variables from the openstack.env file
-                        if [ ! -f openstack.env ]; then
+                        if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
                             echo "ERROR: Missing openstack.env file with destination cloud credentials!"
                             exit 1
                         fi
 
                         set -a
-                        source openstack.env
+                        source /var/lib/jenkins/workspace/goldenimage/openstack.env
                         set +a
 
                         echo "Validating OpenStack environment..."
