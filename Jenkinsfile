@@ -1,94 +1,65 @@
-variable "openstack_username" {}
-variable "openstack_password" {}
-variable "openstack_tenant_name" {}
-variable "openstack_auth_url" {}
-variable "openstack_domain_name" {
-  default = "Default"
-}
+pipeline {
+  agent any
 
-# Dynamically generate image name using a timestamp
-locals {
-  timestamp  = formatdate("20060102150405", timestamp())  # Go time format: YYYYMMDDHHMMSS
-  image_name = "patched-rhel9.2-${local.timestamp}"
-}
-
-
-# --- CLEANUP BUILD (Deletes existing image) ---
-source "null" "cleanup" {
-  communicator = "none"
-}
-
-build {
-  name    = "cleanup-existing-image"
-  sources = ["source.null.cleanup"]
-
-  provisioner "shell-local" {
-    inline = [
-      "echo \"Setting up OpenStack environment...\"",
-      "export OS_AUTH_URL=\"${var.openstack_auth_url}\"",
-      "export OS_USERNAME=\"${var.openstack_username}\"",
-      "export OS_PASSWORD=\"${var.openstack_password}\"",
-      "export OS_PROJECT_NAME=\"${var.openstack_tenant_name}\"",
-      "export OS_USER_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
-      "export OS_PROJECT_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
-      "export OS_COMPUTE_API_VERSION=2.1",
-      "export OS_IMAGE_API_VERSION=2",
-      "export OS_INSECURE=true",
-      "echo \"Checking if image ${local.image_name} already exists...\"",
-      "EXISTING_IMAGE=\"$(openstack image list --name ${local.image_name} -f value -c ID)\"",
-      "if [ -n \"$EXISTING_IMAGE\" ]; then",
-      "  echo \"Image found: $EXISTING_IMAGE. Attempting to delete it...\"",
-      "  openstack image delete \"$EXISTING_IMAGE\" || echo 'Warning: Failed to delete image. Continuing...'",
-      "else",
-      "  echo 'No existing image found.'",
-      "fi"
-    ]
-  }
-}
-
-# --- MAIN IMAGE BUILD ---
-source "openstack" "rhel_image" {
-  username           = var.openstack_username
-  password           = var.openstack_password
-  domain_name        = var.openstack_domain_name
-  identity_endpoint  = var.openstack_auth_url
-  tenant_name        = var.openstack_tenant_name
-  insecure           = true
-
-  source_image_name  = "rhel9.4_7feb25"
-  image_name         = local.image_name
-  flavor             = "c8m16d100"
-  ssh_username       = "decoy"
-  ssh_password       = "Mycl0ud@456"
-  security_groups    = ["default"]
-  networks           = ["cabbc816-7263-4b07-a537-8c2aca7eb988"]
-}
-
-build {
-  name    = "rhel9.2-b2b-image"
-  sources = ["source.openstack.rhel_image"]
-
-  provisioner "shell" {
-    inline = [
-      "sudo mkdir /home/ritu-test",
-      "echo \"Packer image build complete!\" > /home/decoy/info.txt"
-    ]
+  environment {
+    IMAGE_DIR = "/var/lib/jenkins/images"
   }
 
-  post-processor "shell-local" {
-    inline = [
-      "echo \"Setting up OpenStack environment...\"",
-      "export OS_AUTH_URL=\"${var.openstack_auth_url}\"",
-      "export OS_USERNAME=\"${var.openstack_username}\"",
-      "export OS_PASSWORD=\"${var.openstack_password}\"",
-      "export OS_PROJECT_NAME=\"${var.openstack_tenant_name}\"",
-      "export OS_USER_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
-      "export OS_PROJECT_DOMAIN_NAME=\"${var.openstack_domain_name}\"",
-      "export OS_COMPUTE_API_VERSION=2.1",
-      "export OS_IMAGE_API_VERSION=2",
-      "export OS_INSECURE=true",
-      "echo \"Saving image locally as ${local.image_name}.qcow2...\"",
-      "openstack image save ${local.image_name} --file ${local.image_name}.qcow2 || echo 'Warning: Image save failed.'"
-    ]
+  stages {
+    stage('Checkout Code') {
+      steps {
+        git url: 'https://github.com/rari1603/golden_image_creation.git'
+      }
+    }
+
+    stage('Run Packer Build') {
+      steps {
+        sh '''
+          echo "Running Packer build..."
+          packer init openstack.pkr.hcl
+          packer build -var "openstack_username=${OS_USERNAME}" \
+                       -var "openstack_password=${OS_PASSWORD}" \
+                       -var "openstack_auth_url=${OS_AUTH_URL}" \
+                       -var "openstack_tenant_name=${OS_PROJECT_NAME}" \
+                       -var "openstack_domain_name=Default" \
+                       openstack.pkr.hcl
+        '''
+      }
+    }
+
+    stage('Check Image File') {
+      steps {
+        sh '''
+          echo "Checking image directory..."
+          ls -lh ${IMAGE_DIR} || echo "Image directory not found"
+        '''
+      }
+    }
+
+    stage('Archive Image') {
+      steps {
+        archiveArtifacts artifacts: 'images/*.qcow2', allowEmptyArchive: true
+      }
+    }
+
+    stage('Upload to Another OpenStack Env') {
+      steps {
+        sh '''
+          echo "Uploading to second OpenStack environment..."
+          # You can override env vars or source another RC file here
+          # openstack image create --file /var/lib/jenkins/images/patched-rhel9.2.qcow2 --disk-format qcow2 --container-format bare NEW_IMAGE_NAME
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      echo 'Build process completed.'
+      cleanWs()
+    }
+    failure {
+      echo 'Build failed!'
+    }
   }
 }
