@@ -53,7 +53,7 @@ source "openstack" "rhel_image" {
   tenant_name        = var.openstack_tenant_name
   insecure           = true
 
-  source_image_name  = "rhel_new_26mar2025"
+  source_image_name  = "ritu_sds_golden-image"
   image_name         = local.image_name
   flavor             = "c8m16d100"
   ssh_username       = "decoy"
