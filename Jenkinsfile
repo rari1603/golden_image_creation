@@ -5,7 +5,7 @@ pipeline {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
         IMAGE_NAME  = 'patched-rhel9.2'
-        LOCAL_IMAGE_PATH = "/home/${IMAGE_NAME}.qcow2"  // Corrected the file path
+        LOCAL_IMAGE_PATH = "build/${IMAGE_NAME}.qcow2"  // Corrected the file path (use the actual path where the image is saved)
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
  
@@ -61,15 +61,18 @@ pipeline {
 
         stage('Archive Image') {
             steps {
-                // Archive the saved image as an artifact for future use or download
-                archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                script {
+                    echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
+                    // Archive the saved image as an artifact for future use or download
+                    archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                }
             }
         }
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
                 script {
-                    def imageFile = "${IMAGE_NAME}.qcow2"  // The qcow2 file created by Packer
+                    def imageFile = "${LOCAL_IMAGE_PATH}"  // The qcow2 file created by Packer
                     def imageName = "${IMAGE_NAME}"  // Image name (e.g., "patched-rhel9.2-<timestamp>")
 
                     sh """
