@@ -6,6 +6,7 @@ pipeline {
         IMAGE_NAME = "patched-rhel9.2-${env.TIMESTAMP}.qcow2"
         GITHUB_REPO = 'https://github.com/rari1603/golden_image_creation.git' 
         GITHUB_BRANCH = 'main'  
+        VENV_DIR = 'venv'  // Define the virtual environment directory here
     }
 
     stages {
