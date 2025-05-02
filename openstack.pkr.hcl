@@ -8,9 +8,10 @@ variable "openstack_domain_name" {
 
 # Dynamically generate image name using a timestamp
 locals {
-  timestamp  = formatdate("YYYYMMDDHHMMSS", timestamp())  # Format timestamp correctly
+  timestamp  = formatdate("20060102150405", timestamp())  # Go time format: YYYYMMDDHHMMSS
   image_name = "patched-rhel9.2-${local.timestamp}"
 }
+
 
 # --- CLEANUP BUILD (Deletes existing image) ---
 source "null" "cleanup" {
