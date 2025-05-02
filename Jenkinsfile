@@ -59,17 +59,7 @@ pipeline {
             }
         }
  
-        stage('Save Image Locally') {
-            steps {
-                script {
-                    // Save the image locally, assuming the image is stored in the current directory
-                    sh """
-                        cp ${IMAGE_NAME}.qcow2 ${LOCAL_IMAGE_PATH}
-                    """
-                }
-            }
-        }
- 
+  
         stage('Archive Image') {
             steps {
                 // Archive the saved image as an artifact for future use or download
@@ -77,7 +67,45 @@ pipeline {
             }
         }
     }
- 
+      stage('Upload Image to Another OpenStack Environment') {
+    steps {
+        script {
+            def imageFile = "${IMAGE_NAME}.qcow2"  // The qcow2 file created by Packer
+            def imageName = "${IMAGE_NAME}"  // Image name (e.g., "patched-rhel9.2-<timestamp>")
+
+            sh """
+                echo "Uploading image '${imageName}' to the destination OpenStack..."
+
+                # Activate Python virtual environment
+                source ${VENV_DIR}/bin/activate
+
+                # Load destination OpenStack environment variables from the openstack.env file
+                if [ ! -f openstack.env ]; then
+                    echo "ERROR: Missing openstack.env file with destination cloud credentials!"
+                    exit 1
+                fi
+
+                set -a
+                source openstack.env
+                set +a
+
+                echo "Validating OpenStack environment..."
+                openstack token issue || { echo "Authentication failed"; exit 1; }
+
+                # Upload the image to the destination OpenStack using 'openstack image create'
+                echo "Uploading image ${imageName} to the destination OpenStack..."
+                openstack image create \\
+                    --disk-format qcow2 \\
+                    --container-format bare \\
+                    --public \\
+                    --file "${imageFile}" \\
+                    "${imageName}"
+
+                echo "Upload complete."
+            """
+        }
+    }
+} 
     post {
         always {
             echo "Build process completed."
