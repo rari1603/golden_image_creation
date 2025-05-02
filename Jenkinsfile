@@ -55,10 +55,17 @@ pipeline {
         stage('Check Image Directory') {
             steps {
                 script {
-                    // Check the workspace and confirm the path
                     echo 'Checking if the image exists...'
                     sh 'pwd' // Print the current working directory
-                    sh 'ls -l /var/lib/jenkins/workspace/goldenimage/' || echo "Directory not found"
+
+                    // FIXED LINE BELOW — wrapped in full shell block
+                    sh '''
+                        if [ -d /var/lib/jenkins/workspace/goldenimage ]; then
+                            ls -l /var/lib/jenkins/workspace/goldenimage/
+                        else
+                            echo "Directory not found"
+                        fi
+                    '''
                 }
             }
         }
@@ -67,7 +74,6 @@ pipeline {
             steps {
                 script {
                     echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
-                    // Archive the image from the expected path
                     archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
                 }
             }
