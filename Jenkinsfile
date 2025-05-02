@@ -1,6 +1,6 @@
 pipeline {
     agent any
- 
+
     environment {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
@@ -8,7 +8,7 @@ pipeline {
         LOCAL_IMAGE_PATH = "/home/${IMAGE_NAME}.qcow2"  // Corrected the file path
         VENV_DIR = "/var/lib/jenkins/venv" // Path for virtual environment
     }
- 
+
     stages {
         stage('Clone Repo') {
             steps {
@@ -16,7 +16,7 @@ pipeline {
                 git branch: 'main', credentialsId: '03', url: 'https://github.com/rari1603/golden_image_creation.git'
             }
         }
- 
+
         stage('Install Dependencies') {
             steps {
                 script {
@@ -24,7 +24,7 @@ pipeline {
                     sh """
                         python3.9 -m venv ${VENV_DIR}
                     """
- 
+
                     // Activate the virtual environment, upgrade pip, and install python-openstackclient
                     sh """
                         source ${VENV_DIR}/bin/activate
@@ -34,31 +34,44 @@ pipeline {
                 }
             }
         }
- 
+
+        stage('Generate Image Name') {
+            steps {
+                script {
+                    // Generate timestamp in the format YYYYMMDDT%H%M%SZ (e.g., 2025-05-02T112607Z)
+                    def timestamp = sh(script: "date +%Y%m%dT%H%M%SZ", returnStdout: true).trim()
+
+                    // Update the IMAGE_NAME with the timestamp
+                    env.IMAGE_NAME = "patched-rhel9.2-${timestamp}"
+                    echo "Generated image name: ${env.IMAGE_NAME}"
+                }
+            }
+        }
+
         stage('Build Image with Packer - Cleanup') {
             steps {
                 script {
-                    // Run the first Packer build command for cleanup
+                    // Run the first Packer build command for cleanup, passing the image_name
                     sh """
                         source ${VENV_DIR}/bin/activate
-                        packer build -only=cleanup-existing-image.null.cleanup -var-file=${PACKER_VARS} ${PACKER_FILE}
+                        packer build -only=cleanup-existing-image.null.cleanup -var "image_name=${env.IMAGE_NAME}" -var-file=${PACKER_VARS} ${PACKER_FILE}
                     """
                 }
             }
         }
- 
+
         stage('Build Image with Packer - RHEL Image') {
             steps {
                 script {
-                    // Run the second Packer build command for RHEL image
+                    // Run the second Packer build command for the RHEL image
                     sh """
                         source ${VENV_DIR}/bin/activate
-                        packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${PACKER_VARS} ${PACKER_FILE}
+                        packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var "image_name=${env.IMAGE_NAME}" -var-file=${PACKER_VARS} ${PACKER_FILE}
                     """
                 }
             }
         }
- 
+
         stage('Save Image Locally') {
             steps {
                 script {
@@ -69,7 +82,7 @@ pipeline {
                 }
             }
         }
- 
+
         stage('Archive Image') {
             steps {
                 // Archive the saved image as an artifact for future use or download
@@ -77,7 +90,7 @@ pipeline {
             }
         }
     }
- 
+
     post {
         always {
             echo "Build process completed."
