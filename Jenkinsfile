@@ -2,12 +2,12 @@ pipeline {
     agent any
 
     environment {
-        PACKER_FILE      = 'openstack.pkr.hcl'
-        PACKER_VARS      = 'openstack.pkrvars.hcl'
-        IMAGE_BASE_NAME  = 'patched-rhel9.2'
-        IMAGE_TIMESTAMP  = "${new Date().format('yyyyMMddHHmmss')}"
-        LOCAL_IMAGE_PATH = "/var/lib/jenkins/images/${IMAGE_BASE_NAME}.qcow2"
-        VENV_DIR         = "/var/lib/jenkins/venv"
+        PACKER_VARS = 'openstack.pkrvars.hcl'
+        PACKER_FILE = 'openstack.pkr.hcl'
+        IMAGE_NAME  = 'patched-rhel9.2'
+        IMAGE_TIMESTAMP = '20060102150405'
+        LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2"
+        VENV_DIR = "/var/lib/jenkins/venv"
     }
 
     stages {
@@ -19,85 +19,89 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh """
-                    python3.9 -m venv ${VENV_DIR}
-                    source ${VENV_DIR}/bin/activate
-                    pip install --upgrade pip
-                    pip install python-openstackclient
-                """
+                script {
+                    sh """
+                        python3.9 -m venv ${VENV_DIR}
+                        source ${VENV_DIR}/bin/activate
+                        pip install --upgrade pip
+                        pip install python-openstackclient
+                    """
+                }
             }
         }
 
-        stage('Clean Existing Image') {
+        stage('Build Image with Packer - Cleanup') {
             steps {
-                sh """
-                    source ${VENV_DIR}/bin/activate
-                    packer build -only=cleanup-existing-image.null.cleanup \
-                        -var 'openstack_username=$OS_USERNAME' \
-                        -var 'openstack_password=$OS_PASSWORD' \
-                        -var 'openstack_tenant_name=$OS_PROJECT_NAME' \
-                        -var 'openstack_auth_url=$OS_AUTH_URL' \
-                        ${PACKER_FILE}
-                """
+                script {
+                    sh """
+                        source ${VENV_DIR}/bin/activate
+                        packer build -only=cleanup-existing-image.null.cleanup -var-file=${PACKER_VARS} ${PACKER_FILE}
+                    """
+                }
             }
         }
 
-        stage('Build New Image') {
+        stage('Build Image with Packer - RHEL Image') {
             steps {
-                sh """
-                    source ${VENV_DIR}/bin/activate
-                    packer build -only=rhel9.2-b2b-image.openstack.rhel_image \
-                        -var 'openstack_username=$OS_USERNAME' \
-                        -var 'openstack_password=$OS_PASSWORD' \
-                        -var 'openstack_tenant_name=$OS_PROJECT_NAME' \
-                        -var 'openstack_auth_url=$OS_AUTH_URL' \
-                        ${PACKER_FILE}
-                """
+                script {
+                    sh """
+                        source ${VENV_DIR}/bin/activate
+                        packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${PACKER_VARS} ${PACKER_FILE}
+                    """
+                }
             }
         }
 
-        stage('Verify Image Saved') {
+        stage('Check Image Directory') {
             steps {
-                sh """
-                    echo "Checking saved image: ${LOCAL_IMAGE_PATH}"
-                    ls -lh ${LOCAL_IMAGE_PATH} || echo 'Image not found!'
-                """
+                script {
+                    // Check the workspace and confirm the path
+                    echo 'Checking if the image exists...'
+                    sh 'pwd' // Print the current working directory
+                    sh 'ls -l /var/lib/jenkins/workspace/goldenimage/' || echo "Directory not found"
+                }
             }
         }
 
         stage('Archive Image') {
             steps {
-                archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                script {
+                    echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
+                    // Archive the image from the expected path
+                    archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                }
             }
         }
 
-        stage('Upload Image to Target OpenStack') {
+        stage('Upload Image to Another OpenStack Environment') {
             steps {
                 script {
-                    def imageName = "${IMAGE_BASE_NAME}-${IMAGE_TIMESTAMP}"
+                    def imageFile = "${LOCAL_IMAGE_PATH}"
+                    def imageName = "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"
+
                     sh """
+                        echo "Uploading image '${imageName}' to the destination OpenStack..."
+                        source ${VENV_DIR}/bin/activate
+                        
                         if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
-                            echo "ERROR: Destination OpenStack credentials not found!"
+                            echo "ERROR: Missing openstack.env file with destination cloud credentials!"
                             exit 1
                         fi
 
-                        echo "Uploading image '${imageName}' to destination cloud..."
-
-                        source ${VENV_DIR}/bin/activate
                         set -a
                         source /var/lib/jenkins/workspace/goldenimage/openstack.env
                         set +a
 
-                        openstack token issue || { echo "Auth failed"; exit 1; }
+                        openstack token issue || { echo "Authentication failed"; exit 1; }
 
                         openstack image create \\
-                          --disk-format qcow2 \\
-                          --container-format bare \\
-                          --public \\
-                          --file ${LOCAL_IMAGE_PATH} \\
-                          "${imageName}"
+                            --disk-format qcow2 \\
+                            --container-format bare \\
+                            --public \\
+                            --file "${imageFile}" \\
+                            "${imageName}"
 
-                        echo "Upload successful."
+                        echo "Upload complete."
                     """
                 }
             }
@@ -106,7 +110,7 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline finished."
+            echo "Build process completed."
             cleanWs()
         }
         failure {
