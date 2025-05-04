@@ -76,30 +76,23 @@ pipeline {
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
-                sh """
-                    echo "Uploading image '${IMAGE_NAME}-${IMAGE_TIMESTAMP}' to destination OpenStack..."
-                    source ${VENV_DIR}/bin/activate
+                script {
+                    def uploadScript = "/var/lib/jenkins/workspace/goldenimage/upload_to_glance.sh"
+                    def imageFile = env.LOCAL_IMAGE_PATH
+                    def imageName = "${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}"
 
-                    if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
-                        echo "ERROR: Missing openstack.env file with destination cloud credentials!"
-                        exit 1
-                    fi
+                    sh """
+                        if [ ! -f "${uploadScript}" ]; then
+                            echo "ERROR: Upload script not found: ${uploadScript}"
+                            exit 1
+                        fi
 
-                    set -a
-                    source /var/lib/jenkins/workspace/goldenimage/openstack.env
-                    set +a
+                        chmod +x "${uploadScript}"
 
-                    openstack token issue || { echo "Authentication failed"; exit 1; }
-
-                    openstack image create \\
-                        --disk-format qcow2 \\
-                        --container-format bare \\
-                        --public \\
-                        --file "${LOCAL_IMAGE_PATH}" \\
-                        "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"
-
-                    echo "Upload complete."
-                """
+                        echo "Uploading image ${imageFile} as ${imageName}..."
+                        ${uploadScript} "${imageFile}" "${imageName}"
+                    """
+                }
             }
         }
     }
