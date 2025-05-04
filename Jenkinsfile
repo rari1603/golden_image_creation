@@ -77,7 +77,7 @@ pipeline {
         stage('Upload Image to Another OpenStack Environment') {
             steps {
                 script {
-                    def uploadScript = "${WORKSPACE}/goldenimage/upload_to_glance.sh"
+                    def uploadScript = "${WORKSPACE}/golden_image_creation/upload_to_glance.sh"
                     def glanceImageName = "${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}"
 
                     sh """
