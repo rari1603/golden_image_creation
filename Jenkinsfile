@@ -65,10 +65,14 @@ pipeline {
         }
 
         stage('Archive Image') {
-            steps {
-                archiveArtifacts artifacts: "${env.IMAGE_FILE_PATH}", fingerprint: true
-            }
+    steps {
+        script {
+            def copiedPath = "${WORKSPACE}/patched-rhel9.2.qcow2"
+            sh "cp ${env.IMAGE_FILE_PATH} ${copiedPath}"
+            archiveArtifacts artifacts: 'patched-rhel9.2.qcow2', fingerprint: true
         }
+    }
+}
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
