@@ -5,8 +5,6 @@ pipeline {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
         IMAGE_NAME  = 'patched-rhel9.2'
-        IMAGE_TIMESTAMP = '20060102150405'
-        LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${IMAGE_NAME}-${IMAGE_TIMESTAMP}.qcow2"
         VENV_DIR = "/var/lib/jenkins/venv"
     }
 
@@ -17,93 +15,91 @@ pipeline {
             }
         }
 
+        stage('Generate Timestamp') {
+            steps {
+                script {
+                    env.IMAGE_TIMESTAMP = sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim()
+                    env.LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}.qcow2"
+                }
+            }
+        }
+
         stage('Install Dependencies') {
             steps {
-                script {
-                    sh """
-                        python3.9 -m venv ${VENV_DIR}
-                        source ${VENV_DIR}/bin/activate
-                        pip install --upgrade pip
-                        pip install python-openstackclient
-                    """
-                }
+                sh """
+                    python3.9 -m venv ${VENV_DIR}
+                    source ${VENV_DIR}/bin/activate && \
+                    pip install --upgrade pip && \
+                    pip install python-openstackclient
+                """
             }
         }
 
-        stage('Build Image with Packer - Cleanup') {
+        stage('Build Image - Cleanup') {
             steps {
-                script {
-                    sh """
-                        source ${VENV_DIR}/bin/activate
-                        packer build -only=cleanup-existing-image.null.cleanup -var-file=${PACKER_VARS} ${PACKER_FILE}
-                    """
-                }
+                sh """
+                    source ${VENV_DIR}/bin/activate && \
+                    packer build -only=cleanup-existing-image.null.cleanup -var-file=${PACKER_VARS} ${PACKER_FILE}
+                """
             }
         }
 
-        stage('Build Image with Packer - RHEL Image') {
+        stage('Build Image - RHEL Image') {
             steps {
-                script {
-                    sh """
-                        source ${VENV_DIR}/bin/activate
-                        packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${PACKER_VARS} ${PACKER_FILE}
-                    """
-                }
+                sh """
+                    source ${VENV_DIR}/bin/activate && \
+                    packer build -only=rhel9.2-b2b-image.openstack.rhel_image -var-file=${PACKER_VARS} ${PACKER_FILE}
+                """
             }
         }
 
         stage('Check Image Directory') {
             steps {
-                script {
-                    // Check the workspace and confirm the path
-                    echo 'Checking if the image exists...'
-                    sh 'pwd' // Print the current working directory
-                    sh 'ls -l /var/lib/jenkins/workspace/goldenimage/' || echo "Directory not found"
-                }
+                echo 'Checking if the image exists...'
+                sh 'pwd'
+                sh 'ls -l /var/lib/jenkins/workspace/goldenimage/ || echo "Directory not found"'
             }
         }
 
         stage('Archive Image') {
             steps {
                 script {
-                    echo "Archiving the image from ${LOCAL_IMAGE_PATH}..."
-                    // Archive the image from the expected path
-                    archiveArtifacts artifacts: "${LOCAL_IMAGE_PATH}", fingerprint: true
+                    if (fileExists(env.LOCAL_IMAGE_PATH)) {
+                        echo "Archiving image: ${env.LOCAL_IMAGE_PATH}"
+                        archiveArtifacts artifacts: "${env.LOCAL_IMAGE_PATH}", fingerprint: true
+                    } else {
+                        error "Image file not found: ${env.LOCAL_IMAGE_PATH}"
+                    }
                 }
             }
         }
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
-                script {
-                    def imageFile = "${LOCAL_IMAGE_PATH}"
-                    def imageName = "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"
+                sh """
+                    echo "Uploading image '${IMAGE_NAME}-${IMAGE_TIMESTAMP}' to destination OpenStack..."
+                    source ${VENV_DIR}/bin/activate
 
-                    sh """
-                        echo "Uploading image '${imageName}' to the destination OpenStack..."
-                        source ${VENV_DIR}/bin/activate
-                        
-                        if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
-                            echo "ERROR: Missing openstack.env file with destination cloud credentials!"
-                            exit 1
-                        fi
+                    if [ ! -f /var/lib/jenkins/workspace/goldenimage/openstack.env ]; then
+                        echo "ERROR: Missing openstack.env file with destination cloud credentials!"
+                        exit 1
+                    fi
 
-                        set -a
-                        source /var/lib/jenkins/workspace/goldenimage/openstack.env
-                        set +a
+                    set -a
+                    source /var/lib/jenkins/workspace/goldenimage/openstack.env
+                    set +a
 
-                        openstack token issue || { echo "Authentication failed"; exit 1; }
+                    openstack token issue || { echo "Authentication failed"; exit 1; }
 
-                        openstack image create \\
-                            --disk-format qcow2 \\
-                            --container-format bare \\
-                            --public \\
-                            --file "${imageFile}" \\
-                            "${imageName}"
+                    openstack image create \\
+                        --disk-format qcow2 \\
+                        --container-format bare \\
+                        --public \\
+                        --file "${LOCAL_IMAGE_PATH}" \\
+                        "${IMAGE_NAME}-${IMAGE_TIMESTAMP}"
 
-                        echo "Upload complete."
-                    """
-                }
+                    echo "Upload complete."
+                """
             }
         }
     }
