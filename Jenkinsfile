@@ -5,6 +5,7 @@ pipeline {
         PACKER_VARS = 'openstack.pkrvars.hcl'
         PACKER_FILE = 'openstack.pkr.hcl'
         IMAGE_NAME  = 'patched-rhel9.2'
+        IMAGE_FILE_PATH = '/var/lib/jenkins/images/patched-rhel9.2.qcow2'
         VENV_DIR = "/var/lib/jenkins/venv"
     }
 
@@ -19,7 +20,6 @@ pipeline {
             steps {
                 script {
                     env.IMAGE_TIMESTAMP = sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim()
-                    env.LOCAL_IMAGE_PATH = "/var/lib/jenkins/workspace/goldenimage/${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}.qcow2"
                 }
             }
         }
@@ -53,44 +53,37 @@ pipeline {
             }
         }
 
-        stage('Check Image Directory') {
+        stage('Check Image File') {
             steps {
-                echo 'Checking if the image exists...'
-                sh 'pwd'
-                sh 'ls -l /var/lib/jenkins/workspace/goldenimage/ || echo "Directory not found"'
+                script {
+                    if (!fileExists(env.IMAGE_FILE_PATH)) {
+                        error "Image file not found at ${env.IMAGE_FILE_PATH}"
+                    }
+                    sh "ls -lh ${env.IMAGE_FILE_PATH}"
+                }
             }
         }
 
         stage('Archive Image') {
             steps {
-                script {
-                    if (fileExists(env.LOCAL_IMAGE_PATH)) {
-                        echo "Archiving image: ${env.LOCAL_IMAGE_PATH}"
-                        archiveArtifacts artifacts: "${env.LOCAL_IMAGE_PATH}", fingerprint: true
-                    } else {
-                        error "Image file not found: ${env.LOCAL_IMAGE_PATH}"
-                    }
-                }
+                archiveArtifacts artifacts: "${env.IMAGE_FILE_PATH}", fingerprint: true
             }
         }
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
                 script {
-                    def uploadScript = "/var/lib/jenkins/workspace/goldenimage/upload_to_glance.sh"
-                    def imageFile = env.LOCAL_IMAGE_PATH
-                    def imageName = "${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}"
+                    def uploadScript = "${WORKSPACE}/goldenimage/upload_to_glance.sh"
+                    def glanceImageName = "${env.IMAGE_NAME}-${env.IMAGE_TIMESTAMP}"
 
                     sh """
                         if [ ! -f "${uploadScript}" ]; then
-                            echo "ERROR: Upload script not found: ${uploadScript}"
+                            echo "Upload script not found: ${uploadScript}"
                             exit 1
                         fi
 
                         chmod +x "${uploadScript}"
-
-                        echo "Uploading image ${imageFile} as ${imageName}..."
-                        ${uploadScript} "${imageFile}" "${imageName}"
+                        ${uploadScript} "${env.IMAGE_FILE_PATH}" "${glanceImageName}"
                     """
                 }
             }
