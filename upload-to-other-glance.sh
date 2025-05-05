@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
+source ~/openstack-venv/bin/activate
+
+cd /tmp
 
 # Ensure a valid working directory to avoid FileNotFoundError
 cd /tmp || {
