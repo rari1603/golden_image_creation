@@ -1,10 +1,17 @@
 #!/bin/bash
 set -e
-source ~/openstack-venv/bin/activate
 
-cd /tmp
+VENV_PATH="/var/lib/jenkins/openstack-venv/bin/activate"
 
-# Ensure a valid working directory to avoid FileNotFoundError
+# Check if virtual environment exists
+if [[ ! -f "$VENV_PATH" ]]; then
+  echo "Error: Virtual environment not found at $VENV_PATH"
+  exit 1
+fi
+
+source "$VENV_PATH"
+
+# Ensure a valid working directory
 cd /tmp || {
   echo "Failed to change to /tmp. Exiting."
   exit 1
