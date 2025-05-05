@@ -53,26 +53,9 @@ pipeline {
             }
         }
 
-        stage('Check Image File') {
-            steps {
-                script {
-                    if (!fileExists(env.IMAGE_FILE_PATH)) {
-                        error "Image file not found at ${env.IMAGE_FILE_PATH}"
-                    }
-                    sh "ls -lh ${env.IMAGE_FILE_PATH}"
-                }
-            }
-        }
+        
 
-        stage('Archive Image') {
-    steps {
-        script {
-            def copiedPath = "${WORKSPACE}/patched-rhel9.2.qcow2"
-            sh "cp ${env.IMAGE_FILE_PATH} ${copiedPath}"
-            archiveArtifacts artifacts: 'patched-rhel9.2.qcow2', fingerprint: true
-        }
-    }
-}
+        
 
         stage('Upload Image to Another OpenStack Environment') {
             steps {
